@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movie Recommendation System — System Design</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0e17;
+    --surface: #111827;
+    --surface2: #1a2234;
+    --border: #2a3548;
+    --text: #e2e8f0;
+    --text-muted: #8896ab;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-orange: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --accent-pink: #ec4899;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center;
+    padding: 48px 24px 32px;
+    position: relative;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+  }
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .header p {
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .milestone-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 16px 16px;
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .tab:hover { border-color: var(--accent-blue); color: var(--text); }
+  .tab.active {
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(6,182,212,0.1));
+    border-color: var(--accent-blue);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(59,130,246,0.15);
+  }
+
+  .canvas-container {
+    width: 100%;
+    overflow-x: auto;
+    padding: 16px;
+  }
+  .canvas {
+    position: relative;
+    min-width: 1100px;
+    min-height: 720px;
+    margin: 0 auto;
+    max-width: 1200px;
+  }
+
+  /* SVG arrows layer */
+  .arrows-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .arrows-layer line, .arrows-layer path {
+    stroke-width: 1.5;
+    fill: none;
+    opacity: 0.5;
+  }
+  .arrows-layer marker path { fill: var(--accent-cyan); }
+
+  /* Nodes */
+  .node {
+    position: absolute;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 2;
+    min-width: 150px;
+  }
+  .node:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  .node.highlight {
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 24px rgba(6,182,212,0.2);
+  }
+  .node.dim { opacity: 0.25; }
+
+  .node-icon {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  .node-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+  }
+  .node-tech {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .node-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Color coding by layer */
+  .node.data-source { border-left: 3px solid var(--accent-orange); }
+  .node.data-source .node-title { color: var(--accent-orange); }
+  .node.data-source .node-badge { background: rgba(245,158,11,0.15); color: var(--accent-orange); }
+
+  .node.storage { border-left: 3px solid var(--accent-green); }
+  .node.storage .node-title { color: var(--accent-green); }
+  .node.storage .node-badge { background: rgba(16,185,129,0.15); color: var(--accent-green); }
+
+  .node.ml { border-left: 3px solid var(--accent-purple); }
+  .node.ml .node-title { color: var(--accent-purple); }
+  .node.ml .node-badge { background: rgba(139,92,246,0.15); color: var(--accent-purple); }
+
+  .node.serving { border-left: 3px solid var(--accent-cyan); }
+  .node.serving .node-title { color: var(--accent-cyan); }
+  .node.serving .node-badge { background: rgba(6,182,212,0.15); color: var(--accent-cyan); }
+
+  .node.infra { border-left: 3px solid var(--accent-blue); }
+  .node.infra .node-title { color: var(--accent-blue); }
+  .node.infra .node-badge { background: rgba(59,130,246,0.15); color: var(--accent-blue); }
+
+  .node.monitoring { border-left: 3px solid var(--accent-pink); }
+  .node.monitoring .node-title { color: var(--accent-pink); }
+  .node.monitoring .node-badge { background: rgba(236,72,153,0.15); color: var(--accent-pink); }
+
+  .node.safety { border-left: 3px solid var(--accent-red); }
+  .node.safety .node-title { color: var(--accent-red); }
+  .node.safety .node-badge { background: rgba(239,68,68,0.15); color: var(--accent-red); }
+
+  /* Detail panel */
+  .detail-panel {
+    position: fixed;
+    right: -420px;
+    top: 0;
+    width: 400px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 100;
+    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    padding: 32px 24px;
+    box-shadow: -8px 0 40px rgba(0,0,0,0.5);
+  }
+  .detail-panel.open { right: 0; }
+  .detail-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .detail-close:hover { color: #fff; border-color: var(--accent-red); }
+  .detail-panel h2 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  .detail-panel .detail-subtitle {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+  .detail-section {
+    margin-bottom: 20px;
+  }
+  .detail-section h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .detail-section p, .detail-section li {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .detail-section ul {
+    list-style: none;
+    padding: 0;
+  }
+  .detail-section li::before {
+    content: '→';
+    color: var(--accent-cyan);
+    margin-right: 8px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .detail-section code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--accent-cyan);
+  }
+  .detail-config {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--accent-green);
+    overflow-x: auto;
+    white-space: pre;
+    margin-top: 8px;
+  }
+
+  /* Overlay */
+  .overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .overlay.open { opacity: 1; pointer-events: all; }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+  }
+
+  /* Data flow labels */
+  .flow-label {
+    position: absolute;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--text-muted);
+    background: var(--bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    z-index: 3;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* Milestone info bar */
+  .milestone-info {
+    text-align: center;
+    padding: 8px 16px 20px;
+    font-size: 13px;
+    color: var(--text-muted);
+    min-height: 44px;
+  }
+  .milestone-info strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Movie Recommendation System</h1>
+  <p>System Architecture · 1M Users · 20K Movies · &lt;600ms Latency</p>
+</div>
+
+<div class="milestone-tabs">
+  <div class="tab active" data-milestone="all">Full System</div>
+  <div class="tab" data-milestone="m1">M1 · Model + Deploy</div>
+  <div class="tab" data-milestone="m2">M2 · Quality + CI</div>
+  <div class="tab" data-milestone="m3">M3 · Monitoring + Experiments</div>
+  <div class="tab" data-milestone="m4">M4 · Fairness + Security</div>
+</div>
+
+<div class="milestone-info" id="milestoneInfo">
+  <strong>Full System View</strong> — Click any component to see tech details, config, and responsibilities
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-orange)"></div>Data Sources</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-green)"></div>Storage</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-purple)"></div>ML Pipeline</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-cyan)"></div>Serving</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-blue)"></div>Infrastructure</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-pink)"></div>Monitoring</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent-red)"></div>Safety</div>
+</div>
+
+<div class="canvas-container">
+<div class="canvas" id="canvas">
+
+  <!-- SVG arrows -->
+  <svg class="arrows-layer" id="arrows">
+    <defs>
+      <marker id="arrowCyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="rgba(6,182,212,0.6)"/>
+      </marker>
+      <marker id="arrowOrange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="rgba(245,158,11,0.6)"/>
+      </marker>
+      <marker id="arrowGreen" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="rgba(16,185,129,0.6)"/>
+      </marker>
+      <marker id="arrowPurple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="rgba(139,92,246,0.6)"/>
+      </marker>
+      <marker id="arrowPink" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6" fill="rgba(236,72,153,0.6)"/>
+      </marker>
+    </defs>
+    <!-- Kafka → Consumer -->
+    <line x1="155" y1="135" x2="295" y2="135" stroke="rgba(245,158,11,0.5)" marker-end="url(#arrowOrange)"/>
+    <!-- User API → DB -->
+    <line x1="155" y1="262" x2="295" y2="220" stroke="rgba(245,158,11,0.5)" marker-end="url(#arrowOrange)"/>
+    <!-- Movie API → DB -->
+    <line x1="155" y1="378" x2="295" y2="220" stroke="rgba(245,158,11,0.5)" marker-end="url(#arrowOrange)"/>
+    <!-- Consumer → PostgreSQL -->
+    <line x1="435" y1="135" x2="345" y2="190" stroke="rgba(6,182,212,0.5)" marker-end="url(#arrowCyan)"/>
+    <!-- PostgreSQL → Training -->
+    <line x1="395" y1="220" x2="510" y2="270" stroke="rgba(16,185,129,0.5)" marker-end="url(#arrowGreen)"/>
+    <!-- PostgreSQL → Feature Eng -->
+    <line x1="345" y1="250" x2="510" y2="345" stroke="rgba(16,185,129,0.5)" marker-end="url(#arrowGreen)"/>
+    <!-- Training → MLflow -->
+    <line x1="650" y1="270" x2="510" y2="435" stroke="rgba(139,92,246,0.5)" marker-end="url(#arrowPurple)"/>
+    <!-- Feature Eng → FAISS -->
+    <line x1="650" y1="345" x2="510" y2="510" stroke="rgba(139,92,246,0.5)" marker-end="url(#arrowPurple)"/>
+    <!-- MLflow → Precompute -->
+    <line x1="610" y1="450" x2="720" y2="135" stroke="rgba(139,92,246,0.5)" marker-end="url(#arrowPurple)"/>
+    <!-- FAISS → Precompute -->
+    <line x1="610" y1="510" x2="720" y2="165" stroke="rgba(139,92,246,0.5)" marker-end="url(#arrowPurple)"/>
+    <!-- Precompute → Redis -->
+    <line x1="855" y1="152" x2="910" y2="212" stroke="rgba(6,182,212,0.5)" marker-end="url(#arrowCyan)"/>
+    <!-- Redis → Flask API -->
+    <line x1="960" y1="250" x2="960" y2="340" stroke="rgba(6,182,212,0.5)" marker-end="url(#arrowCyan)"/>
+    <!-- Load Balancer → Flask -->
+    <line x1="960" y1="455" x2="960" y2="405" stroke="rgba(6,182,212,0.5)" marker-end="url(#arrowCyan)"/>
+    <!-- Grafana ← Prometheus -->
+    <line x1="830" y1="530" x2="750" y2="605" stroke="rgba(236,72,153,0.5)" marker-end="url(#arrowPink)"/>
+    <!-- API → Prometheus -->
+    <line x1="925" y1="405" x2="850" y2="510" stroke="rgba(236,72,153,0.5)" marker-end="url(#arrowPink)"/>
+  </svg>
+
+  <!-- ===== DATA SOURCES (left column) ===== -->
+  <div class="node data-source" id="kafka" style="left:10px;top:100px;width:145px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">📡</div>
+    <div class="node-title">Kafka Stream</div>
+    <div class="node-tech">movielog&lt;TEAM-NR&gt;</div>
+    <div class="node-badge">M1 →</div>
+  </div>
+
+  <div class="node data-source" id="userapi" style="left:10px;top:225px;width:145px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">👤</div>
+    <div class="node-title">User API</div>
+    <div class="node-tech">:8080/user/&lt;id&gt;</div>
+    <div class="node-badge">M1 →</div>
+  </div>
+
+  <div class="node data-source" id="movieapi" style="left:10px;top:345px;width:145px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">🎬</div>
+    <div class="node-title">Movie API</div>
+    <div class="node-tech">:8080/movie/&lt;id&gt;</div>
+    <div class="node-badge">M1 →</div>
+  </div>
+
+  <!-- ===== INGESTION ===== -->
+  <div class="node infra" id="consumer" style="left:295px;top:100px;width:145px" data-milestones="m1,m2,m3">
+    <div class="node-icon">⚙️</div>
+    <div class="node-title">Kafka Consumer</div>
+    <div class="node-tech">confluent-kafka<br>Parses 4 event types</div>
+    <div class="node-badge">PM</div>
+  </div>
+
+  <!-- ===== STORAGE (center-left) ===== -->
+  <div class="node storage" id="postgres" style="left:275px;top:195px;width:155px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">🗄️</div>
+    <div class="node-title">PostgreSQL</div>
+    <div class="node-tech">ratings, users, movies<br>watch_events, telemetry<br>provenance_log</div>
+    <div class="node-badge">PM</div>
+  </div>
+
+  <!-- ===== ML PIPELINE (center) ===== -->
+  <div class="node ml" id="training" style="left:500px;top:240px;width:155px" data-milestones="m1,m2,m3">
+    <div class="node-icon">🧠</div>
+    <div class="node-title">Model Training</div>
+    <div class="node-tech">SVD (surprise)<br>ALS (implicit)<br>Cron: every 3 days</div>
+    <div class="node-badge">ML ENG</div>
+  </div>
+
+  <div class="node ml" id="embeddings" style="left:500px;top:315px;width:155px" data-milestones="m1,m2,m3">
+    <div class="node-icon">🔤</div>
+    <div class="node-title">Feature Eng</div>
+    <div class="node-tech">sentence-transformers<br>all-MiniLM-L6-v2<br>Movie + user embeddings</div>
+    <div class="node-badge">ML ENG</div>
+  </div>
+
+  <div class="node ml" id="mlflow" style="left:470px;top:410px;width:155px" data-milestones="m2,m3">
+    <div class="node-icon">📊</div>
+    <div class="node-title">MLflow</div>
+    <div class="node-tech">Model registry<br>Experiment tracking<br>Provenance metadata</div>
+    <div class="node-badge">M2 →</div>
+  </div>
+
+  <div class="node ml" id="faiss" style="left:470px;top:485px;width:155px" data-milestones="m1,m2,m3">
+    <div class="node-icon">🔍</div>
+    <div class="node-title">FAISS Index</div>
+    <div class="node-tech">20K movie vectors<br>Cold-start retrieval<br>Cosine similarity</div>
+    <div class="node-badge">ML ENG</div>
+  </div>
+
+  <!-- ===== SERVING (right column) ===== -->
+  <div class="node infra" id="precompute" style="left:710px;top:110px;width:155px" data-milestones="m1,m2,m3">
+    <div class="node-icon">⚡</div>
+    <div class="node-title">Batch Precompute</div>
+    <div class="node-tech">Generate top-20/user<br>SVD → FAISS → Popular<br>Push to Redis</div>
+    <div class="node-badge">SWE</div>
+  </div>
+
+  <div class="node storage" id="redis" style="left:895px;top:195px;width:140px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">⚡</div>
+    <div class="node-title">Redis</div>
+    <div class="node-tech">user:id → top-20<br>~500MB for 1M users<br>&lt;1ms lookups</div>
+    <div class="node-badge">SWE</div>
+  </div>
+
+  <div class="node serving" id="flask" style="left:880px;top:330px;width:165px" data-milestones="m1,m2,m3,m4">
+    <div class="node-icon">🌐</div>
+    <div class="node-title">Flask API</div>
+    <div class="node-tech">:8082/recommend/&lt;uid&gt;<br>Redis lookup → CSV list<br>Docker container (M3)</div>
+    <div class="node-badge">SWE</div>
+  </div>
+
+  <div class="node serving" id="loadbalancer" style="left:880px;top:440px;width:165px" data-milestones="m3">
+    <div class="node-icon">⚖️</div>
+    <div class="node-title">Load Balancer</div>
+    <div class="node-tech">A/B split routing<br>Canary releases<br>Blue-green deploys</div>
+    <div class="node-badge">M3 →</div>
+  </div>
+
+  <!-- ===== MONITORING (bottom) ===== -->
+  <div class="node monitoring" id="prometheus" style="left:735px;top:510px;width:145px" data-milestones="m3">
+    <div class="node-icon">📈</div>
+    <div class="node-title">Prometheus</div>
+    <div class="node-tech">Scrapes /metrics<br>Latency, errors, RPS<br>Drift detection</div>
+    <div class="node-badge">M3 →</div>
+  </div>
+
+  <div class="node monitoring" id="grafana" style="left:660px;top:595px;width:145px" data-milestones="m3">
+    <div class="node-icon">📊</div>
+    <div class="node-title">Grafana</div>
+    <div class="node-tech">Dashboards + alerts<br>Availability, accuracy<br>Cost, drift panels</div>
+    <div class="node-badge">M3 →</div>
+  </div>
+
+  <!-- ===== CI/CD ===== -->
+  <div class="node infra" id="cicd" style="left:280px;top:345px;width:150px" data-milestones="m2,m3">
+    <div class="node-icon">🔄</div>
+    <div class="node-title">GitHub Actions</div>
+    <div class="node-tech">CI: test on push<br>Coverage reports<br>Lint + type checks</div>
+    <div class="node-badge">M2 →</div>
+  </div>
+
+  <div class="node infra" id="docker" style="left:280px;top:435px;width:150px" data-milestones="m3">
+    <div class="node-icon">🐳</div>
+    <div class="node-title">Docker</div>
+    <div class="node-tech">Containerized API<br>docker-compose<br>Model mounted as vol</div>
+    <div class="node-badge">M3 →</div>
+  </div>
+
+  <!-- ===== SAFETY (bottom-right) ===== -->
+  <div class="node safety" id="fairness" style="left:880px;top:550px;width:165px" data-milestones="m4">
+    <div class="node-icon">⚖️</div>
+    <div class="node-title">Fairness + Safety</div>
+    <div class="node-tech">Age-gating (R-rated)<br>Popularity bias audit<br>Feedback loop detection</div>
+    <div class="node-badge">M4 →</div>
+  </div>
+
+  <!-- ===== DATA QUALITY ===== -->
+  <div class="node infra" id="dataquality" style="left:280px;top:525px;width:150px" data-milestones="m2,m3,m4">
+    <div class="node-icon">🛡️</div>
+    <div class="node-title">Data Quality</div>
+    <div class="node-tech">Schema validation<br>Drift detection (PSI)<br>Great Expectations</div>
+    <div class="node-badge">M2 →</div>
+  </div>
+
+  <!-- Flow Labels -->
+  <div class="flow-label" style="left:175px;top:118px">events</div>
+  <div class="flow-label" style="left:175px;top:246px">profiles</div>
+  <div class="flow-label" style="left:175px;top:358px">metadata</div>
+  <div class="flow-label" style="left:450px;top:248px">train data</div>
+  <div class="flow-label" style="left:865px;top:170px">write recs</div>
+  <div class="flow-label" style="left:970px;top:290px">lookup</div>
+  <div class="flow-label" style="left:880px;top:490px">metrics</div>
+
+</div>
+</div>
+
+<!-- Detail Panel -->
+<div class="overlay" id="overlay"></div>
+<div class="detail-panel" id="detailPanel">
+  <button class="detail-close" id="detailClose">✕</button>
+  <div id="detailContent"></div>
+</div>
+
+<script>
+const details = {
+  kafka: {
+    title: "Apache Kafka Event Stream",
+    subtitle: "Primary data source — start consuming Day 1",
+    owner: "PM",
+    sections: [
+      { heading: "What It Does", text: "Provides real-time event stream of all user activity on the platform. Four event types: recommendation requests, watch events (per-minute), ratings (1-5 stars), and new account creation." },
+      { heading: "Key Config", items: ["Topic: movielog<TEAM-NR>", "Library: confluent-kafka or kafka-python", "Run in tmux/screen 24/7", "Parse each line by comma-splitting", "Store to PostgreSQL immediately"] },
+      { heading: "Critical Warning", text: "START THIS DAY 1. Every day without the consumer running is training data you don't have. Most teams fail because they start data collection too late." },
+      { heading: "Code", config: "from confluent_kafka import Consumer\n\nc = Consumer({\n  'bootstrap.servers': '<ip>:9092',\n  'group.id': 'team<N>',\n  'auto.offset.reset': 'earliest'\n})\nc.subscribe(['movielog<N>'])\n\nwhile True:\n  msg = c.poll(1.0)\n  if msg:\n    parse_and_store(msg.value())" }
+    ]
+  },
+  userapi: {
+    title: "User Profile API",
+    subtitle: "User metadata including self-descriptions for cold start",
+    owner: "PM",
+    sections: [
+      { heading: "What It Does", text: "Returns JSON with user demographics and self-described movie preferences. Accepts up to 200 comma-separated IDs per request. Rate limited." },
+      { heading: "Key Fields", items: ["user_id, age, gender, occupation", "self_description_likes — 'I like sci-fi and action'", "self_description_dislikes — 'I hate horror'", "These text fields are CRITICAL for cold start (10pts)"] },
+      { heading: "Fetching Strategy", items: ["Fetch all active users seen in Kafka first", "Batch 200 IDs per request", "Store in PostgreSQL users table", "Re-fetch periodically for new signups (M3)"] },
+      { heading: "Code", config: "import requests\n\nids = ','.join(str(i) for i in range(1, 201))\nresp = requests.get(f'http://<ip>:8080/user/{ids}')\nusers = resp.json()" }
+    ]
+  },
+  movieapi: {
+    title: "Movie Metadata API",
+    subtitle: "Movie info including licensing cost",
+    owner: "PM",
+    sections: [
+      { heading: "What It Does", text: "Returns JSON with movie title, genres, year, description, IMDB/TMDB IDs, adult flag, and licensing cost per view. ~20K movies total." },
+      { heading: "Key Fields", items: ["movie_id, title, genres, year, overview", "cost — licensing fee per play (USD) → needed for M2 cost eval", "adult — boolean flag → needed for M4 fairness (R-rated to minors)", "imdb_id, tmdb_id — for external data enrichment"] },
+      { heading: "Fetching Strategy", text: "Only ~20K movies = ~100 API calls at 200/batch. Fetch all on Day 1. Store in PostgreSQL movies table. Also embed all movie descriptions for FAISS index." },
+    ]
+  },
+  consumer: {
+    title: "Kafka Consumer Service",
+    subtitle: "Ingestion pipeline — parses and stores events",
+    owner: "PM",
+    sections: [
+      { heading: "What It Does", text: "Reads from the Kafka topic continuously, parses the 4 event types using regex/string parsing, and inserts into PostgreSQL tables." },
+      { heading: "Parsing Logic", items: ["'recommendation request' → log which recs were served + status code", "'GET /data/m/<mid>/<min>.mpg' → watch event, extract movie_id and minute", "'GET /rate/<mid>=<rating>' → explicit rating 1-5", "'GET /create_account' → new user, trigger cold-start pipeline (M3)"] },
+      { heading: "Data Quality (M2)", text: "Add schema validation here. Check that movie IDs exist, ratings are 1-5, timestamps are valid. Log and skip malformed events. This becomes your data quality layer." },
+      { heading: "Config", config: "# Run persistently:\ntmux new -s kafka\npython src/data_collection/kafka_consumer.py\n# Ctrl+B then D to detach\n\n# Or as systemd service:\n# /etc/systemd/system/kafka-consumer.service" }
+    ]
+  },
+  postgres: {
+    title: "PostgreSQL Database",
+    subtitle: "System of record for all structured data",
+    owner: "PM",
+    sections: [
+      { heading: "Why PostgreSQL", text: "Handles concurrent reads (API serving) + writes (Kafka consumer) simultaneously. Supports pgvector extension for embeddings. Production-grade, looks professional in reports." },
+      { heading: "Tables", items: [
+        "ratings (user_id, movie_id, rating, timestamp)",
+        "watch_events (user_id, movie_id, minutes_watched, timestamp)",
+        "users (user_id, age, gender, likes_text, dislikes_text)",
+        "movies (movie_id, title, genres, year, cost, overview)",
+        "recommendations_log (user_id, recs, model_version, timestamp) → M3 provenance",
+        "experiment_assignments (user_id, experiment, variant) → M3 A/B tests"
+      ]},
+      { heading: "Setup", config: "sudo apt install postgresql\nsudo -u postgres createuser --superuser $USER\ncreatedb recsys\npip install psycopg2-binary sqlalchemy" }
+    ]
+  },
+  training: {
+    title: "Model Training Pipeline",
+    subtitle: "SVD collaborative filtering + retraining",
+    owner: "ML Engineer",
+    sections: [
+      { heading: "Primary Model: SVD", text: "Matrix factorization on the user-item rating matrix using scikit-surprise. Learns latent factors for users and movies. Works well when users have rating history." },
+      { heading: "Training Process", items: [
+        "Query ratings from PostgreSQL",
+        "Temporal split: train on older 80%, test on recent 20%",
+        "Train SVD with n_factors=100, n_epochs=20",
+        "Evaluate NDCG@20 on test set",
+        "Serialize model with pickle",
+        "Log to MLflow (M2+): params, metrics, artifact path"
+      ]},
+      { heading: "Automated Retraining (M3)", text: "Cron job every 3 days: pulls latest ratings, retrains, evaluates, pushes new model. If accuracy drops below threshold, alert and keep old model." },
+      { heading: "Code", config: "from surprise import SVD, Dataset, Reader\nimport pickle\n\nreader = Reader(rating_scale=(1, 5))\ndata = Dataset.load_from_df(df, reader)\ntrainset = data.build_full_trainset()\n\nmodel = SVD(n_factors=100, n_epochs=20)\nmodel.fit(trainset)\n\nwith open('models/svd_v1.pkl', 'wb') as f:\n    pickle.dump(model, f)" }
+    ]
+  },
+  embeddings: {
+    title: "Feature Engineering + Embeddings",
+    subtitle: "Sentence-transformer embeddings for semantic search",
+    owner: "ML Engineer",
+    sections: [
+      { heading: "What It Does", text: "Embeds all movie descriptions and user self-descriptions into a shared 384-dimensional vector space using sentence-transformers. Enables semantic similarity matching for cold-start users." },
+      { heading: "Process", items: [
+        "Load all movie overviews/descriptions from PostgreSQL",
+        "Embed with all-MiniLM-L6-v2 (fast, 384 dims)",
+        "Build FAISS IndexFlatIP (inner product = cosine sim on normalized vectors)",
+        "For cold-start: embed user's likes text → FAISS search → top 20 movies",
+        "Filter out movies matching dislike keywords/genres"
+      ]},
+      { heading: "Code", config: "from sentence_transformers import SentenceTransformer\nimport faiss, numpy as np\n\nmodel = SentenceTransformer('all-MiniLM-L6-v2')\n\nmovie_texts = [m['title'] + ' ' + m['overview']\n               for m in movies]\nembeddings = model.encode(movie_texts,\n                          normalize_embeddings=True)\n\nindex = faiss.IndexFlatIP(384)\nindex.add(np.array(embeddings))\nfaiss.write_index(index, 'models/movies.faiss')" }
+    ]
+  },
+  mlflow: {
+    title: "MLflow — Experiment & Model Registry",
+    subtitle: "Versioning, tracking, provenance (M2+)",
+    owner: "ML Engineer",
+    sections: [
+      { heading: "What It Does", text: "Tracks every training run: hyperparameters, metrics, model artifacts. Provides model registry for versioning. Directly enables M3 provenance requirement." },
+      { heading: "What It Tracks", items: [
+        "Run params: n_factors, learning_rate, training data date range",
+        "Metrics: NDCG@20, training time, model size",
+        "Artifacts: model pickle file, FAISS index",
+        "Tags: git commit hash = pipeline version",
+        "Model stage: staging → production"
+      ]},
+      { heading: "Provenance Chain (M3)", text: "For any prediction → model version (MLflow run ID) → pipeline code (git commit tag on run) → training data (date range tag on run). This answers all 3 provenance questions." },
+      { heading: "Setup", config: "pip install mlflow\nmlflow server --backend-store-uri \\\n  postgresql://localhost/mlflow \\\n  --default-artifact-root ./mlartifacts \\\n  --host 0.0.0.0 --port 5000\n\n# In training code:\nimport mlflow\nmlflow.set_tracking_uri('http://localhost:5000')\nwith mlflow.start_run():\n    mlflow.log_param('n_factors', 100)\n    mlflow.log_metric('ndcg_20', 0.42)\n    mlflow.sklearn.log_model(model, 'svd')" }
+    ]
+  },
+  faiss: {
+    title: "FAISS Vector Index",
+    subtitle: "Cold-start semantic retrieval",
+    owner: "ML Engineer",
+    sections: [
+      { heading: "What It Does", text: "Stores 20K movie embedding vectors. When a cold-start user arrives with only a text description, embeds their text and finds the 20 most semantically similar movies in <5ms." },
+      { heading: "Why FAISS over alternatives", items: [
+        "20K vectors is tiny — IndexFlatIP does exact search in <1ms",
+        "No server process needed (unlike Pinecone, Weaviate)",
+        "~30MB file on disk, loads in milliseconds",
+        "Battle-tested by Meta for billion-scale search",
+        "Alternative: pgvector in PostgreSQL (simpler but slower)"
+      ]},
+      { heading: "Cold-Start Flow", text: "1) User signs up with description 'I love Christopher Nolan sci-fi movies'\n2) Embed text → 384-dim vector\n3) FAISS search → returns indices of 20 nearest movies\n4) Map indices to movie IDs\n5) Store in Redis for future requests" }
+    ]
+  },
+  precompute: {
+    title: "Batch Precompute Job",
+    subtitle: "The key architectural decision — precompute, don't serve live",
+    owner: "SWE",
+    sections: [
+      { heading: "Why Precompute", text: "Computing recommendations on every request = slow, unpredictable latency, resource-intensive. Precomputing for all 1M users and caching in Redis = <1ms lookups, 100% reliability, trivial scaling." },
+      { heading: "Fallback Chain", items: [
+        "1. User has ≥5 ratings → SVD model predictions",
+        "2. User has self-description → FAISS embedding search",
+        "3. User has nothing → global popularity list",
+        "Output: top-20 movie IDs per user → Redis"
+      ]},
+      { heading: "Schedule", text: "Run after every model retrain (every 3 days in M3). Also run on-demand when new cold-start users are processed. Takes ~10-30 min for 1M users depending on model." },
+      { heading: "Code", config: "import redis\nr = redis.Redis()\n\nfor user_id in all_user_ids:\n    if has_ratings(user_id):\n        recs = svd_recommend(user_id, top_k=20)\n    elif has_description(user_id):\n        recs = faiss_recommend(user_id, top_k=20)\n    else:\n        recs = POPULAR_MOVIES[:20]\n    \n    r.set(f'user:{user_id}',\n          ','.join(str(m) for m in recs))" }
+    ]
+  },
+  redis: {
+    title: "Redis — Recommendation Cache",
+    subtitle: "Sub-millisecond serving layer",
+    owner: "SWE",
+    sections: [
+      { heading: "What It Does", text: "In-memory key-value store. Holds precomputed top-20 movie IDs for every user. The Flask API reads from Redis on each request — guaranteed <1ms latency." },
+      { heading: "Data Model", items: [
+        "Key: user:<user_id> (e.g., user:42)",
+        "Value: '12345,67890,11111,...' (comma-separated movie IDs)",
+        "~1M keys × ~200 bytes = ~200-500MB RAM",
+        "TTL: none (overwritten on each batch precompute)"
+      ]},
+      { heading: "Setup", config: "sudo apt install redis-server\nsudo systemctl enable redis-server\nsudo systemctl start redis-server\n\n# Config: /etc/redis/redis.conf\n# maxmemory 1gb\n# maxmemory-policy allkeys-lru\n\n# Test:\nredis-cli ping  # → PONG\nredis-cli set user:1 '100,200,300'\nredis-cli get user:1  # → '100,200,300'" },
+      { heading: "Resilience", text: "If Redis goes down, Flask falls back to a pickle dict loaded at startup. Redis persistence (RDB snapshots) enabled so data survives restarts." }
+    ]
+  },
+  flask: {
+    title: "Flask API — Prediction Service",
+    subtitle: "The endpoint they grade: :8082/recommend/<userid>",
+    owner: "SWE",
+    sections: [
+      { heading: "Requirements", items: [
+        "Endpoint: /recommend/<userid>",
+        "Response: plain text, comma-separated movie IDs, single line",
+        "Max 20 movie IDs, ordered by relevance",
+        "Must respond in <600ms",
+        "Must handle unknown users (return defaults, don't crash)",
+        "NOT JSON. NOT anything else. Just: 12345,67890,11111"
+      ]},
+      { heading: "Containerization (M3)", text: "Wrap in Dockerfile. Mount model files as volumes. Use docker-compose with Redis. Load balancer sits in front for A/B routing." },
+      { heading: "Code", config: "from flask import Flask\nimport redis\n\napp = Flask(__name__)\nr = redis.Redis(decode_responses=True)\nDEFAULTS = '100,200,300,400,500'\n\n@app.route('/recommend/<int:userid>')\ndef recommend(userid):\n    recs = r.get(f'user:{userid}')\n    return recs if recs else DEFAULTS\n\nif __name__ == '__main__':\n    app.run(host='0.0.0.0', port=8082)" },
+      { heading: "Logging (M2+)", text: "Log every request: user_id, model_version, response, latency. Store in PostgreSQL recommendations_log table. This is your online telemetry and provenance data." }
+    ]
+  },
+  loadbalancer: {
+    title: "Load Balancer — A/B Testing Router",
+    subtitle: "Routes traffic for experiments (M3)",
+    owner: "SWE",
+    sections: [
+      { heading: "What It Does", text: "Sits in front of Flask containers. Routes users to different model variants based on A/B test assignment. Enables canary releases and blue-green deployments with zero downtime." },
+      { heading: "A/B Split Logic", items: [
+        "Hash user_id → deterministic group assignment",
+        "Consistent: same user always sees same variant",
+        "Example: user_id % 100 < 50 → Model A, else → Model B",
+        "Track which model served which user in experiment_assignments table"
+      ]},
+      { heading: "Implementation Options", items: [
+        "Simple: 10-line Python reverse proxy",
+        "Medium: Nginx with upstream config",
+        "Advanced: Kubernetes with traffic splitting",
+        "For this class: the simple Python approach is fine"
+      ]},
+      { heading: "Code", config: "# Simple load balancer\nfrom flask import Flask, request\nimport requests as req\n\napp = Flask(__name__)\n\n@app.route('/recommend/<int:uid>')\ndef route(uid):\n    if uid % 100 < 50:\n        return req.get(f'http://localhost:8083/recommend/{uid}').text\n    else:\n        return req.get(f'http://localhost:8084/recommend/{uid}').text\n\napp.run(host='0.0.0.0', port=8082)" }
+    ]
+  },
+  prometheus: {
+    title: "Prometheus — Metrics Collection",
+    subtitle: "Scrapes and stores time-series metrics (M3)",
+    owner: "SWE / PM",
+    sections: [
+      { heading: "What It Monitors", items: [
+        "Service availability (up/down, response codes)",
+        "Request latency (histogram: p50, p95, p99)",
+        "Throughput (requests per second)",
+        "Model accuracy over time (from telemetry pipeline)",
+        "Data drift scores (PSI from data quality checks)"
+      ]},
+      { heading: "How It Works", text: "Flask exposes a /metrics endpoint using prometheus_flask_instrumentator. Prometheus scrapes it every 15s. Custom metrics for business KPIs (accuracy, cost) pushed via pushgateway or custom exporter." },
+      { heading: "Setup", config: "# Install Prometheus on VM\nwget https://github.com/prometheus/prometheus/releases/...\n\n# prometheus.yml\nscrape_configs:\n  - job_name: 'flask-api'\n    static_configs:\n      - targets: ['localhost:8082']\n    scrape_interval: 15s\n\n# In Flask:\npip install prometheus-flask-instrumentator\nfrom prometheus_flask_instrumentator import Instrumentator\nInstrumentator().instrument(app).expose(app)" }
+    ]
+  },
+  grafana: {
+    title: "Grafana — Monitoring Dashboard",
+    subtitle: "Visual dashboards + alerting (M3)",
+    owner: "PM",
+    sections: [
+      { heading: "Required Panels (M3)", items: [
+        "Service Availability — uptime %, status code distribution",
+        "Model Accuracy — online metric over time (e.g., click-through rate)",
+        "Operating Cost — cumulative licensing cost + LLM API cost",
+        "Data Drift — PSI scores over time, alert threshold lines"
+      ]},
+      { heading: "Alerts", items: [
+        "Service down for >5 min → Slack notification",
+        "Accuracy drops >10% from baseline → email alert",
+        "Cost exceeds daily budget → warning",
+        "Drift score exceeds threshold → investigate"
+      ]},
+      { heading: "Setup", config: "# Install Grafana\nsudo apt install grafana\nsudo systemctl enable grafana-server\nsudo systemctl start grafana-server\n# → http://localhost:3000 (admin/admin)\n\n# Add Prometheus as data source:\n# URL: http://localhost:9090\n# Then create dashboards with PromQL queries" }
+    ]
+  },
+  cicd: {
+    title: "GitHub Actions — CI/CD Pipeline",
+    subtitle: "Automated testing on every push (M2)",
+    owner: "SWE",
+    sections: [
+      { heading: "What It Runs", items: [
+        "Unit tests for data parsing, feature engineering, API",
+        "Integration tests for pipeline steps",
+        "Coverage report generation (pytest-cov)",
+        "Linting (flake8 or ruff)",
+        "Triggered on every push to main/dev branches"
+      ]},
+      { heading: "Testing Strategy", items: [
+        "Test Kafka event parsing with sample strings",
+        "Test API response format (comma-separated, ≤20 IDs)",
+        "Test model loading and prediction shape",
+        "Test cold-start fallback chain",
+        "Test data quality validators",
+        "Use mocks for external services (Kafka, Redis, APIs)"
+      ]},
+      { heading: "Config", config: "# .github/workflows/ci.yml\nname: CI\non: [push, pull_request]\njobs:\n  test:\n    runs-on: self-hosted  # or ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with: { python-version: '3.10' }\n      - run: pip install -r requirements.txt\n      - run: pytest tests/ -v --cov=src\n                 --cov-report=html" }
+    ]
+  },
+  docker: {
+    title: "Docker — Containerization",
+    subtitle: "Containerized deployment for zero-downtime updates (M3)",
+    owner: "SWE",
+    sections: [
+      { heading: "What Gets Containerized", items: [
+        "Flask API (main inference service)",
+        "Redis (can use official redis image)",
+        "Optionally: Kafka consumer, Prometheus, Grafana",
+        "Model files mounted as volumes (not baked into image)"
+      ]},
+      { heading: "Zero-Downtime Deploy", text: "docker-compose up --scale api=2 → start new container with new model → health check passes → stop old container. Or use the load balancer to drain traffic from old → new." },
+      { heading: "Config", config: "# Dockerfile\nFROM python:3.10-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY src/ ./src/\nEXPOSE 8082\nCMD [\"python\", \"src/serving/app.py\"]\n\n# docker-compose.yml\nservices:\n  api:\n    build: .\n    ports: ['8082:8082']\n    volumes: ['./models:/app/models']\n    depends_on: [redis]\n    restart: always\n  redis:\n    image: redis:7-alpine\n    ports: ['6379:6379']" }
+    ]
+  },
+  fairness: {
+    title: "Fairness, Safety & Security Analysis",
+    subtitle: "Responsible AI audit (M4)",
+    owner: "Entire Team",
+    sections: [
+      { heading: "Fairness Issues to Anticipate", items: [
+        "R-rated movies recommended to minors (age from user API)",
+        "Popularity bias: popular movies dominate recs for all groups",
+        "Genre stereotyping by demographic (e.g., gender-based genre bias)",
+        "Unequal recommendation quality across age/gender groups"
+      ]},
+      { heading: "Security Threats", items: [
+        "Shill attacks: fake ratings to boost/suppress movies",
+        "API abuse: DDoS on /recommend endpoint",
+        "Data poisoning via Kafka injection",
+        "Model extraction through repeated queries"
+      ]},
+      { heading: "Feedback Loops", items: [
+        "Filter bubble: recommend what user watched → watch more of same → narrowing",
+        "Popularity reinforcement: popular gets recommended more → gets watched more",
+        "Use world-vs-machine framework to analyze assumptions"
+      ]},
+      { heading: "Analysis Approach", text: "Query telemetry data from PostgreSQL. Compare recommendation distributions across demographics. Check if recommendation diversity decreases over time. Look for anomalous rating patterns (shill attacks). All analysis in Jupyter notebooks." }
+    ]
+  },
+  dataquality: {
+    title: "Data Quality Checks",
+    subtitle: "Schema validation + drift detection (M2+)",
+    owner: "PM / SWE",
+    sections: [
+      { heading: "What to Validate", items: [
+        "Kafka events: correct format, valid movie IDs, ratings 1-5",
+        "User API: valid JSON, expected fields present, ages reasonable",
+        "Movie API: valid JSON, genres non-empty, cost > 0",
+        "Your API input: user ID is integer, exists in database"
+      ]},
+      { heading: "Drift Detection", items: [
+        "Population Stability Index (PSI) on rating distributions",
+        "Monitor genre distribution of watched movies over time",
+        "Track ratio of new vs. returning users",
+        "Alert if Kafka event volume drops significantly"
+      ]},
+      { heading: "Tools", text: "Great Expectations for schema validation, or write custom validators. scipy.stats.ks_2samp for distribution drift tests. Log all violations to a data_quality_issues table." },
+      { heading: "Code", config: "def validate_rating_event(line):\n    parts = line.split(',')\n    assert len(parts) >= 3\n    user_id = int(parts[1])\n    rating = int(parts[2].split('=')[1])\n    assert 1 <= rating <= 5\n    assert user_id > 0\n    return True" }
+    ]
+  }
+};
+
+// Milestone descriptions
+const milestoneInfos = {
+  all: '<strong>Full System View</strong> — Click any component to see tech details, config, and responsibilities',
+  m1: '<strong>M1: Model + First Deploy</strong> — Data collection, train 2 models, solve cold start, deploy API on :8082, compare models (106 pts)',
+  m2: '<strong>M2: Quality + CI</strong> — Testable pipeline, CI/CD, offline+online evaluation, data quality, cost tracking (103 pts)',
+  m3: '<strong>M3: Monitoring + Experiments</strong> — Docker, auto-retrain, Prometheus+Grafana, A/B testing, provenance, 99% uptime (103 pts)',
+  m4: '<strong>M4: Fairness + Security</strong> — Fairness audit, threat modeling, hazard analysis, feedback loops, telemetry analysis (83 pts)',
+};
+
+// Milestone filtering
+const milestoneMap = {
+  m1: ['kafka','userapi','movieapi','consumer','postgres','training','embeddings','faiss','precompute','redis','flask'],
+  m2: ['kafka','userapi','movieapi','consumer','postgres','training','embeddings','faiss','mlflow','precompute','redis','flask','cicd','dataquality'],
+  m3: ['kafka','userapi','movieapi','consumer','postgres','training','embeddings','faiss','mlflow','precompute','redis','flask','cicd','docker','loadbalancer','prometheus','grafana','dataquality'],
+  m4: ['kafka','userapi','movieapi','consumer','postgres','training','embeddings','faiss','mlflow','precompute','redis','flask','cicd','docker','loadbalancer','prometheus','grafana','dataquality','fairness'],
+};
+
+// Tab switching
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const ms = tab.dataset.milestone;
+    document.getElementById('milestoneInfo').innerHTML = milestoneInfos[ms];
+
+    document.querySelectorAll('.node').forEach(node => {
+      if (ms === 'all') {
+        node.classList.remove('dim');
+        node.classList.remove('highlight');
+      } else {
+        const visible = milestoneMap[ms].includes(node.id);
+        node.classList.toggle('dim', !visible);
+        node.classList.toggle('highlight', visible);
+      }
+    });
+  });
+});
+
+// Detail panel
+function openDetail(id) {
+  const d = details[id];
+  if (!d) return;
+
+  let html = `<h2>${d.title}</h2><div class="detail-subtitle">${d.subtitle}</div>`;
+  if (d.owner) html += `<div style="margin-bottom:16px"><span style="font-family:'JetBrains Mono';font-size:11px;background:rgba(59,130,246,0.15);color:var(--accent-blue);padding:3px 8px;border-radius:4px;">Owner: ${d.owner}</span></div>`;
+
+  d.sections.forEach(s => {
+    html += `<div class="detail-section"><h3>${s.heading}</h3>`;
+    if (s.text) html += `<p>${s.text}</p>`;
+    if (s.items) {
+      html += '<ul>';
+      s.items.forEach(i => html += `<li>${i}</li>`);
+      html += '</ul>';
+    }
+    if (s.config) html += `<div class="detail-config">${s.config}</div>`;
+    html += '</div>';
+  });
+
+  document.getElementById('detailContent').innerHTML = html;
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('open');
+}
+
+document.querySelectorAll('.node').forEach(node => {
+  node.addEventListener('click', () => openDetail(node.id));
+});
+document.getElementById('detailClose').addEventListener('click', closeDetail);
+document.getElementById('overlay').addEventListener('click', closeDetail);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+</script>
+</body>
+</html>
